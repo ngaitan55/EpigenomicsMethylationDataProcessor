@@ -1,0 +1,5 @@
+*.tsv
+*.txt
+*.csv
+*.sh
+data/*
