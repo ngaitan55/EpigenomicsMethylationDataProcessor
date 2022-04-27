@@ -136,13 +136,19 @@ public class MethylatedRegionFinder {
 		int nSamples = files.size();
 		int currentSWBegin = 0;
 		int currentSWLimit = slidingWindowSize;
+		Distribution sampleDistribution;
 		for(int r = 0; r < nSamples; r++){
 			//MethylationRecord[] currentNext = new MethylationRecord[nSamples];
 			int nHypotheses = 0;
 			int nWindows = 0;
 			List<MethylatedRegion> sampleMrs = new ArrayList<>();
 			Iterator<MethylationRecord> it = iterators.get(r);
-			Distribution sampleDistribution = methylationPercentageDistributions.get(r);
+			if(printDistributions) {
+				sampleDistribution = methylationPercentageDistributions.get(r);
+			}
+			else {
+				sampleDistribution = null;
+			}
 			for(QualifiedSequence seq : sequences){
 				int seqSize = seq.getLength();
 				nWindows = seqSize/slidingWindowSize;
