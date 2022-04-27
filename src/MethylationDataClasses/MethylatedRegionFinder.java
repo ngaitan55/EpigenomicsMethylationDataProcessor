@@ -39,11 +39,14 @@ public class MethylatedRegionFinder {
 	private List<Distribution> methylationPercentageDistributions;
 	private GenomicRegionSortedCollection<MethylatedRegion> methylatedRegions;
 	private Map<String, Integer> mrSampleCounts; 
+	private boolean printDistributions = false;
 	
-	public MethylatedRegionFinder(String genomeFile, int swLength, double initialAlpha) throws IOException {
+	public MethylatedRegionFinder(String genomeFile, int swLength, double initialAlpha, boolean print)
+			throws IOException {
 		mrSampleCounts = new HashMap<>();
 		significanceLevel = initialAlpha;
 		slidingWindowSize = swLength;
+		printDistributions = print;
 		referenceGenome = new ReferenceGenome(genomeFile);
 		sequences = referenceGenome.getSequencesList();
 		betaDistribution = new BetaDistribution(BETA_DISTRIBUTION_ALPHA_PARAMETER, BETA_DISTRIBUTION_BETA_PARAMETER);
@@ -54,7 +57,7 @@ public class MethylatedRegionFinder {
 	public void run(List<String> files, String outPrefix) throws IOException {
 		writer = new PrintWriter(outPrefix + ".MR.tsv");
 		printHeaderFields();
-		//readAndProcessDistributions(files);
+		if(printDistributions) readAndProcessDistributions(files);
 		readAndProcessSamples(files);
 		//System.out.println("Applying correction");
 		//System.out.println("Printing output file");
@@ -139,7 +142,7 @@ public class MethylatedRegionFinder {
 			int nWindows = 0;
 			List<MethylatedRegion> sampleMrs = new ArrayList<>();
 			Iterator<MethylationRecord> it = iterators.get(r);
-			//Distribution sampleDistribution = methylationPercentageDistributions.get(r);
+			Distribution sampleDistribution = methylationPercentageDistributions.get(r);
 			for(QualifiedSequence seq : sequences){
 				int seqSize = seq.getLength();
 				nWindows = seqSize/slidingWindowSize;
@@ -203,11 +206,13 @@ public class MethylatedRegionFinder {
 			//applyBonferroniCorrection(sampleMrs, nHypotheses);
 			methylatedRegions.addAll(sampleMrs);
 			//Print the methylation bases distributions
-			//String currentDistFile = "distribution" + r + ".txt";
-			//PrintStream distPrinter = new PrintStream(currentDistFile);
-			//sampleDistribution.printDistribution(new PrintStream(distPrinter));
-			//distPrinter.close();
-			if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println("#");
+			if(printDistributions) {
+				String currentDistFile = "distribution" + r + ".txt";
+				PrintStream distPrinter = new PrintStream(currentDistFile);
+				sampleDistribution.printDistribution(new PrintStream(distPrinter));
+				distPrinter.close();
+			}
+			//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println("#");
 			//System.out.println("Sample=" + r);
 		}
 		//List<String> chrs =  methylatedRegions.getSequenceNames().getNamesStringList();
@@ -314,9 +319,10 @@ public class MethylatedRegionFinder {
 		String outPrefix = args[1];
 		int swLength = Integer.parseInt(args[2]);
 		double initialAlpha = Double.parseDouble(args[3]);
-		MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, initialAlpha);
+		boolean print = Boolean.parseBoolean(args[4]);
+		MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, initialAlpha, print);
 		List<String> files = new ArrayList<>();
-		for(int f = 4; f < args.length; f++) {
+		for(int f = 5; f < args.length; f++) {
 			files.add(args[f]);
 		}
 		instance.run(files, outPrefix);
