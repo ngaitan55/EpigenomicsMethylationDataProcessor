@@ -115,7 +115,7 @@ public class MethylatedRegionFinder {
 					double windowMethylationPercentage = (double) windowMethylationCount/slidingWindowSize;
 					currentSWBegin += slidingWindowSize;
 					currentSWLimit += slidingWindowSize;
-					sampleDistribution.processDatapoint( (double) windowMethylationPercentage);
+					sampleDistribution.processDatapoint(windowMethylationPercentage);
 				}
 			}
 			currentSWBegin = 0;
@@ -136,19 +136,13 @@ public class MethylatedRegionFinder {
 		int nSamples = files.size();
 		int currentSWBegin = 0;
 		int currentSWLimit = slidingWindowSize;
-		Distribution sampleDistribution;
 		for(int r = 0; r < nSamples; r++){
 			//MethylationRecord[] currentNext = new MethylationRecord[nSamples];
 			int nHypotheses = 0;
 			int nWindows = 0;
 			List<MethylatedRegion> sampleMrs = new ArrayList<>();
 			Iterator<MethylationRecord> it = iterators.get(r);
-			if(printDistributions) {
-				sampleDistribution = methylationPercentageDistributions.get(r);
-			}
-			else {
-				sampleDistribution = null;
-			}
+			Distribution sampleDistribution = new Distribution(0, 1, 0.01);
 			for(QualifiedSequence seq : sequences){
 				int seqSize = seq.getLength();
 				nWindows = seqSize/slidingWindowSize;
@@ -180,6 +174,7 @@ public class MethylatedRegionFinder {
 							int methylated = nextRecord.getMethylatedBaseCalls();
 							int total = nextRecord.getTotal();
 							if(baseIsMethylated(methylated, total)) {
+								System.out.println("base meth=" + methylated + " total=" + total + " curr_count=" + windowMethylationCount);
 								windowMethylationCount++;
 							}
 							iteratorOnHold = false;
@@ -190,7 +185,10 @@ public class MethylatedRegionFinder {
 					//}
 					double windowMethylationPercentage = (double) windowMethylationCount/slidingWindowSize;
 					//double pValue = sampleDistribution.getEmpiricalPvalue( (double) windowMethylationPercentage);
+					System.out.println("count=" + windowMethylationCount + " windowsize=" + slidingWindowSize + 
+							" percentage=" + windowMethylationPercentage);
 					double pValue = 1 - betaDistribution.cumulativeProbability(windowMethylationPercentage);
+					if(printDistributions) sampleDistribution.processDatapoint(windowMethylationPercentage);;
 					//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println(pValue);
 					if(testWindowMethylation(pValue)) {
 						MethylatedRegion mr = new MethylatedRegion(seqName, slidingWindow.getFirst(), 
