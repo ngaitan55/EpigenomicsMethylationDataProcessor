@@ -133,7 +133,7 @@ public class MethylatedRegionFinder {
 		double alpha = (double) (1-mu)/variance;
 		alpha = alpha - (double) (1/mu);
 		alpha = Math.pow(alpha, 2);
-		System.out.println("alpha=" + alpha);
+		//System.out.println("alpha=" + alpha);
 		return alpha;
 	}
 	
@@ -142,7 +142,7 @@ public class MethylatedRegionFinder {
 		double alpha = estimateAlphaParameter(mu, variance);
 		double beta = (double) (1/mu) - 1;
 		beta = beta*alpha;
-		System.out.println("beta=" + beta);
+		//System.out.println("beta=" + beta);
 		return beta;
 	}
 	
@@ -215,7 +215,7 @@ public class MethylatedRegionFinder {
 							int total = nextRecord.getTotal();
 							windowCytosineCount++;
 							if(baseIsMethylated(methylated, total)) {
-								System.out.println("base meth=" + methylated + " total=" + total + " curr_count=" + windowMethylationCount);
+								//System.out.println("base meth=" + methylated + " total=" + total + " curr_count=" + windowMethylationCount);
 								windowMethylationCount++;
 							}
 							iteratorOnHold = false;
@@ -228,9 +228,9 @@ public class MethylatedRegionFinder {
 					double windowMethylationPercentage = (double) windowMethylationCount/slidingWindowSize;
 					//double pValue = sampleDistribution.getEmpiricalPvalue( (double) windowMethylationPercentage);
 					double pValue = 1 - betaDistribution.cumulativeProbability(windowMethylationPercentage);
-					System.out.println("count=" + windowMethylationCount + " windowsize=" + slidingWindowSize + 
-							" Cyto=" + windowCytosineCount + " passes c test: " + passesCCountCriteria
-							+ " percentage=" + windowMethylationPercentage*100 + " pValue=" + pValue);
+					//System.out.println("count=" + windowMethylationCount + " windowsize=" + slidingWindowSize + 
+						//	" Cyto=" + windowCytosineCount + " passes c test: " + passesCCountCriteria
+							//+ " percentage=" + windowMethylationPercentage*100 + " pValue=" + pValue);
 					if(printDistributions && passesCCountCriteria) 
 						sampleDistribution.processDatapoint(windowMethylationPercentage);
 					//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println(pValue);
@@ -298,7 +298,7 @@ public class MethylatedRegionFinder {
 			MethylatedRegion mr = sampleMrs.get(k);
 			double pValue = mr.getpValue();
 			double currentCriticalValue = calculateCorrectedBHCriticalValue(k + 1, m, fdr);
-			System.out.println("$pvalue=" + pValue + " alpha=" + currentCriticalValue + " %=" + mr.getMethylationPercentage());
+			//System.out.println("$pvalue=" + pValue + " alpha=" + currentCriticalValue + " %=" + mr.getMethylationPercentage());
 			if(pValue > currentCriticalValue) {
 				//System.out.println("bool " + (pValue > currentCriticalValue));
 				break;
