@@ -171,6 +171,7 @@ public class MethylatedRegionFinder {
 			MethylationSampleFileReader reader = new MethylationSampleFileReader(file);
 			readers.add(reader);
 			iterators.add(reader.iterator());
+			System.out.println(file);
 		}
 		int nSamples = files.size();
 		int currentSWBegin = 0;
