@@ -15,6 +15,7 @@ public class MethylatedRegion implements GenomicRegion {
 	private double methylatedControlPercentage;
 	private double methylatedTreatmentPercentage;
 	private double methylationPercentage;
+	private int methylationCount;
 	private double pValue;
 	private double correctedPvalue;
 	private boolean isDmr;
@@ -49,6 +50,17 @@ public class MethylatedRegion implements GenomicRegion {
 		this.methylationPercentage = methylatedPercentage;
 		this.pValue = pValue;
 		this.methylatedBases = methylatedBases;
+	}
+	
+	public MethylatedRegion(String sequenceName, int first, int last,
+			int methylatedBaseCount, double pValue) {
+		this.sequenceName = sequenceName;
+		this.first = first;
+		this.last = last;
+		this.sampleCalls = 0;
+		this.isDmr = false;
+		this.methylationCount = methylatedBaseCount;
+		this.pValue = pValue;
 	}
 	
 	public String decodeMRToString() {
@@ -141,6 +153,11 @@ public class MethylatedRegion implements GenomicRegion {
 		else return this.getSequenceName() + "\t" + this.getFirst() + "\t" + this.getLast() + "\t" + this.getCalls() 
 		+ "\t" + this.getMethylationPercentage() + "\t" + this.getpValue() + "\t" + this.getCorrectedPvalue();
 	}
+	
+	public String simpleMRToString() {
+		return this.getSequenceName() + "\t" + this.getFirst() + "\t" + this.getLast() + "\t" + this.getCalls() 
+		+ "\t" + this.methylationCount;
+		}
 
 	public void setCalls(int calls) {
 		// TODO Auto-generated method stub
