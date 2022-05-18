@@ -1,5 +1,8 @@
 package MethylationDataClasses;
 
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
@@ -26,12 +29,26 @@ import ngsep.sequences.QualifiedSequenceList;
 
 public class MethylatedRegionFinder {
 	
+	public static final String KEY_SEPARATOR = ",";
+	
 	public static final String COMMAND_LINE_OPTION_SIMPLE_ANALYSIS = "Simple";
 	public static final String COMMAND_LINE_OPTION_SIGNIFICANT_ANALYSIS = "Significant";
 	
 	public static final double METHYLATION_POS_TRESHOLD = 0.3;
 	public static final double BETA_DISTRIBUTION_DEFAULT_ALPHA_PARAMETER = 0.5;
 	public static final double BETA_DISTRIBUTION_DEFAULT_BETA_PARAMETER = 30;
+	
+	public static final int NUMBER_METHYLATION_CONTEXTS = 3;
+	public static final String CPG_CONTEXT = "CPG";
+	public static final String CHG_CONTEXT = "CHG";
+	public static final String CHH_CONTEXT = "CHH";
+	public static Map<String, Integer> contextCodes = null;
+	private static void buildContextCodeMap() {
+		contextCodes = new HashMap<String, Integer>(NUMBER_METHYLATION_CONTEXTS);
+		contextCodes.put(CPG_CONTEXT, 0);
+		contextCodes.put(CHG_CONTEXT, 1);
+		contextCodes.put(CHH_CONTEXT, 2);
+	}
 	
 	private ReferenceGenome referenceGenome;
 	private double significanceLevel;
@@ -40,34 +57,38 @@ public class MethylatedRegionFinder {
 	private BetaDistribution betaDistribution;
 	private int slidingWindowSize;
 	private String [] customSampleIds;
+	private Map<String, int[]> numberContextsByWindow;
+	private int methylationContextCode;
 	private PrintWriter writer = null;
 	private QualifiedSequenceList sequences;
-	private List<Distribution> methylationPercentageDistributions;
 	private GenomicRegionSortedCollection<MethylatedRegion> methylatedRegions;
 	private Map<String, Integer> mrSampleCounts; 
 	private boolean printDistributions = false;
 	
-	public MethylatedRegionFinder(String genomeFile, int swLength, double initialAlpha, boolean print, String analysisCommand)
-			throws IOException {
+	public MethylatedRegionFinder(String genomeFile, int swLength, double initialAlpha, boolean print
+			, String methylationContext)
+			throws Exception {
 		mrSampleCounts = new HashMap<>();
 		significanceLevel = initialAlpha;
 		slidingWindowSize = swLength;
 		printDistributions = print;
+		buildContextCodeMap();
+		if(contextCodes.containsKey(methylationContext)) methylationContextCode = contextCodes.get(methylationContext);
+		else throw new Exception ("Invalid methylation context");
+		numberContextsByWindow = new HashMap<>();
 		referenceGenome = new ReferenceGenome(genomeFile);
 		sequences = referenceGenome.getSequencesList();
 		betaDistribution = new BetaDistribution(BETA_DISTRIBUTION_DEFAULT_ALPHA_PARAMETER, BETA_DISTRIBUTION_DEFAULT_BETA_PARAMETER);
-		methylationPercentageDistributions = new ArrayList<>();
 		methylatedRegions = new GenomicRegionSortedCollection<>(sequences);
 	}
 	
-	public MethylatedRegionFinder(String refFile, int swLength, boolean print, String analysisType) throws IOException {
+	public MethylatedRegionFinder(String refFile, int swLength, boolean print) throws IOException {
 		// TODO Auto-generated constructor stub
 		mrSampleCounts = new HashMap<>();
 		slidingWindowSize = swLength;
 		printDistributions = print;
 		referenceGenome = new ReferenceGenome(refFile);
 		sequences = referenceGenome.getSequencesList();
-		methylationPercentageDistributions = new ArrayList<>();
 		methylatedRegions = new GenomicRegionSortedCollection<>(sequences);
 	}
 
@@ -89,23 +110,46 @@ public class MethylatedRegionFinder {
 		printSimpleMrs();
 	}
 	
+	private void processContextFile(String windowContextCountsFile) throws IOException, IOException {
+		// TODO Auto-generated method stub
+		try(BufferedReader reader = new BufferedReader(new FileReader(windowContextCountsFile))){
+			String line = reader.readLine();
+			while(line != null) {
+				String [] elements = line.split("\t");
+				GenomicRegion window = new GenomicRegionImpl(elements[0], Integer.parseInt(elements[1]) 
+						, Integer.parseInt(elements[2]));
+				int cpgCount = Integer.parseInt(elements[3]);
+				int chgCount = Integer.parseInt(elements[4]);
+				int chhCount = Integer.parseInt(elements[5]);
+				String windowKey = encodeGenomicRegionToString(window);
+				int [] contextCounts = numberContextsByWindow.computeIfAbsent(windowKey,
+						v -> new int[NUMBER_METHYLATION_CONTEXTS]);
+				contextCounts[0] = cpgCount;
+				contextCounts[1] = chgCount;
+				contextCounts[2] = chhCount;
+				line = reader.readLine();
+			}
+		}
+	}
+	
 	public void readAndFitDistributions(String randFile) throws IOException{
 		QualifiedSequenceList sequences = referenceGenome.getSequencesList();
 		MethylationSampleFileReader reader = new MethylationSampleFileReader(randFile);
-		int currentSWBegin = 0;
+		int currentSWBegin = 1;
 		int currentSWLimit = slidingWindowSize;
 		Distribution sampleDistribution = new Distribution(0, 1, 0.01);
 		Iterator<MethylationRecord> it = reader.iterator();
 		List<Double> samplingData = new ArrayList<>();
 		for(QualifiedSequence seq : sequences){
 			int seqSize = seq.getLength();
-			int nWindows = seqSize/slidingWindowSize;
+			int nWindows = seqSize/slidingWindowSize + 1;
 			int lastWindowSize = seqSize%slidingWindowSize;
 			String seqName = seq.getName();
 			boolean iteratorOnHold = false;
+			//System.out.println("#" + seqName + " size=" + seqSize + " nWindows=" + nWindows + " lastSWSize" + lastWindowSize);
 			MethylationRecord nextRecord = null;
 			for(int i = 0; i < nWindows; i++) {
-				currentSWLimit = i + 1 == nWindows ? lastWindowSize : currentSWLimit;
+				currentSWLimit = i + 1 == nWindows ? currentSWBegin + lastWindowSize : currentSWLimit;
 				GenomicRegion slidingWindow = new GenomicRegionImpl(seqName, currentSWBegin, currentSWLimit);
 				int windowMethylationCount = 0;
 				while(it.hasNext()) {
@@ -129,16 +173,33 @@ public class MethylatedRegionFinder {
 						iteratorOnHold = false;
 					}
 				}
-				double windowMethylationPercentage = (double) windowMethylationCount/slidingWindowSize;
+				if (i + 1 == nWindows) slidingWindow = new GenomicRegionImpl(slidingWindow.getSequenceName(), 
+						slidingWindow.getFirst(), slidingWindow.getFirst() + 299);
+				String currentWindowKey = encodeGenomicRegionToString(slidingWindow);
+				//System.out.println(currentWindowKey);
+				int currentWindowMaxContextCount = numberContextsByWindow.get(currentWindowKey)[methylationContextCode];
+				if (currentWindowMaxContextCount > 5) {
+					double windowMethylationPercentage;
+					if(windowMethylationCount > currentWindowMaxContextCount) {
+						windowMethylationPercentage = 1;
+						//System.out.println("$windowMethylationCount=" + windowMethylationCount + 
+							//	" currentWindowMaxContextCount=" + currentWindowMaxContextCount);
+						//System.out.println("$ " + windowMethylationCount
+							//	+ " " + currentWindowMaxContextCount);
+					}
+					else windowMethylationPercentage = (double) windowMethylationCount/currentWindowMaxContextCount;
+					sampleDistribution.processDatapoint(windowMethylationPercentage);
+					samplingData.add(windowMethylationPercentage);
+					if("Chr1".equals(slidingWindow.getSequenceName())) System.out.println(slidingWindow.getFirst() + "\t" + 
+							windowMethylationPercentage);
+				}
 				currentSWBegin += slidingWindowSize;
 				currentSWLimit += slidingWindowSize;
-				//if(windowMethylationPercentage > 0.01) 
-				sampleDistribution.processDatapoint(windowMethylationPercentage);
-				samplingData.add(windowMethylationPercentage);
 			}
-			currentSWBegin = 0;
+			currentSWBegin = 1;
 			currentSWLimit = slidingWindowSize;
 		}
+		reader.close();
 		betaDistribution = instantiateRandomBetaDistribution(samplingData, 100000);
 		/**double mu = sampleDistribution.getAverage();
 		double variance = sampleDistribution.getVariance();
@@ -195,7 +256,7 @@ public class MethylatedRegionFinder {
 			System.out.println(file);
 		}
 		int nSamples = files.size();
-		int currentSWBegin = 0;
+		int currentSWBegin = 1;
 		int currentSWLimit = slidingWindowSize;
 		for(int r = 0; r < nSamples; r++){
 			//MethylationRecord[] currentNext = new MethylationRecord[nSamples];
@@ -206,7 +267,7 @@ public class MethylatedRegionFinder {
 			Distribution sampleDistribution = new Distribution(0, slidingWindowSize, 1);
 			for(QualifiedSequence seq : sequences){
 				int seqSize = seq.getLength();
-				nWindows = seqSize/slidingWindowSize;
+				nWindows = seqSize/slidingWindowSize + 1;
 				nHypotheses += nWindows;
 				int lastWindowSize = seqSize%slidingWindowSize;
 				String seqName = seq.getName();
@@ -214,7 +275,7 @@ public class MethylatedRegionFinder {
 				boolean iteratorOnHold = false;
 				MethylationRecord nextRecord = null;
 				for(int i = 0; i < nWindows; i++) {
-					currentSWLimit = i + 1 == nWindows ? lastWindowSize : currentSWLimit;
+					currentSWLimit = i + 1 == nWindows ? currentSWBegin + lastWindowSize : currentSWLimit;
 					GenomicRegion slidingWindow = new GenomicRegionImpl(seqName, currentSWBegin, currentSWLimit);
 					int windowMethylationCount = 0;
 					//SortedMap<Integer, MethylationRecord[]> dmrRecords = new TreeMap<>();
@@ -259,14 +320,14 @@ public class MethylatedRegionFinder {
 						slidingWindow.getLast(), windowMethylationCount, 0);
 						sampleMrs.add(mr);
 						//System.out.println("mrFirst=" + mr.getFirst() + " CHR=" + mr.getSequenceName());
-						String mrKey = mr.decodeMRToString();
+						String mrKey = encodeGenomicRegionToString(mr);
 						mrSampleCounts.compute(mrKey, (k,v) -> (v==null) ? 1:v+1);
 					}
 					currentSWBegin += slidingWindowSize;
 					currentSWLimit += slidingWindowSize;
 				}
 				//System.out.println("nPerChr=" + sampleMrs.size() + " CHR=" + seqName);
-				currentSWBegin = 0;
+				currentSWBegin = 1;
 				currentSWLimit = slidingWindowSize;
 			}
 			//System.out.println("nh="+nHypotheses[r]++);
@@ -282,6 +343,7 @@ public class MethylatedRegionFinder {
 			}
 			//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println("#");
 			//System.out.println("Sample=" + r);
+			readers.get(r).close();
 		}
 		//List<String> chrs =  methylatedRegions.getSequenceNames().getNamesStringList();
 		//for(String chr : chrs) {
@@ -297,10 +359,10 @@ public class MethylatedRegionFinder {
 			MethylationSampleFileReader reader = new MethylationSampleFileReader(file);
 			readers.add(reader);
 			iterators.add(reader.iterator());
-			System.out.println(file);
+			//System.out.println(file);
 		}
 		int nSamples = files.size();
-		int currentSWBegin = 0;
+		int currentSWBegin = 1;
 		int currentSWLimit = slidingWindowSize;
 		for(int r = 0; r < nSamples; r++){
 			//MethylationRecord[] currentNext = new MethylationRecord[nSamples];
@@ -311,7 +373,7 @@ public class MethylatedRegionFinder {
 			Distribution sampleDistribution = new Distribution(0, 1, 0.01);
 			for(QualifiedSequence seq : sequences){
 				int seqSize = seq.getLength();
-				nWindows = seqSize/slidingWindowSize;
+				nWindows = seqSize/slidingWindowSize + 1;
 				nHypotheses += nWindows;
 				int lastWindowSize = seqSize%slidingWindowSize;
 				String seqName = seq.getName();
@@ -319,10 +381,10 @@ public class MethylatedRegionFinder {
 				boolean iteratorOnHold = false;
 				MethylationRecord nextRecord = null;
 				for(int i = 0; i < nWindows; i++) {
-					currentSWLimit = i + 1 == nWindows ? lastWindowSize : currentSWLimit;
+					currentSWLimit = i + 1 == nWindows ? currentSWBegin + lastWindowSize : currentSWLimit;
 					GenomicRegion slidingWindow = new GenomicRegionImpl(seqName, currentSWBegin, currentSWLimit);
 					int windowMethylationCount = 0;
-					int windowCytosineCount = 0;
+					int windowCounter= 0;
 					//SortedMap<Integer, MethylationRecord[]> dmrRecords = new TreeMap<>();
 					while(it.hasNext()) {
 						if(!iteratorOnHold) nextRecord = it.next();
@@ -334,13 +396,14 @@ public class MethylatedRegionFinder {
 						}
 						else if(cmp == 1) {
 							iteratorOnHold = false;
+							windowCounter++;
 							//if(!it.hasNext()) 
 							break;
 						}
 						else {
+							windowCounter++;
 							int methylated = nextRecord.getMethylatedBaseCalls();
 							int total = nextRecord.getTotal();
-							windowCytosineCount++;
 							if(baseIsMethylated(methylated, total)) {
 								//System.out.println("base meth=" + methylated + " total=" + total + " curr_count=" + windowMethylationCount);
 								windowMethylationCount++;
@@ -348,32 +411,43 @@ public class MethylatedRegionFinder {
 							iteratorOnHold = false;
 						}
 					}
-					//while(seqName == nextRecord.getSequenceName()) {
-						//if(it.hasNext()) nextRecord = it.next();
-					//}
-					//boolean passesCCountCriteria = testCytosineCountCriteria(windowCytosineCount);
-					double windowMethylationPercentage = (double) windowMethylationCount/slidingWindowSize;
-					//double pValue = sampleDistribution.getEmpiricalPvalue( (double) windowMethylationPercentage);
-					double pValue = 1 - betaDistribution.cumulativeProbability(windowMethylationPercentage);
-					//System.out.println("count=" + windowMethylationCount + " windowsize=" + slidingWindowSize + 
-						//	" Cyto=" + windowCytosineCount + " passes c test: " + passesCCountCriteria
-							//+ " percentage=" + windowMethylationPercentage*100 + " pValue=" + pValue);
-					if(printDistributions) 
-						sampleDistribution.processDatapoint(windowMethylationPercentage);
-					//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println(pValue);
-					if(testWindowMethylation(pValue)) {
-						MethylatedRegion mr = new MethylatedRegion(seqName, slidingWindow.getFirst(), 
-								slidingWindow.getLast(), windowMethylationPercentage*100, pValue, null);
-						sampleMrs.add(mr);
-						//System.out.println("mrFirst=" + mr.getFirst() + " CHR=" + mr.getSequenceName());
-						String mrKey = mr.decodeMRToString();
-						mrSampleCounts.compute(mrKey, (k,v) -> (v==null) ? 1:v+1);
+					if (i + 1 == nWindows) slidingWindow = new GenomicRegionImpl(slidingWindow.getSequenceName(), 
+							slidingWindow.getFirst(), slidingWindow.getFirst() + 299);
+					String currentWindowKey = encodeGenomicRegionToString(slidingWindow);
+					int currentWindowMaxContextCount = numberContextsByWindow.get(currentWindowKey)[methylationContextCode];
+					if (currentWindowMaxContextCount > 5) {
+						//System.out.println("# " + windowCounter + " " + " " + windowMethylationCount + 
+							//	 " " + currentWindowMaxContextCount);
+						double windowMethylationPercentage;
+						if(windowMethylationCount > currentWindowMaxContextCount) {
+							windowMethylationPercentage = 1;
+							//System.out.println("$windowMethylationCount=" + windowMethylationCount + 
+								//	" currentWindowMaxContextCount=" + currentWindowMaxContextCount);
+							//System.out.println("$ " + windowMethylationCount
+								//	+ " " + currentWindowMaxContextCount);
+						}
+						else windowMethylationPercentage = (double) windowMethylationCount/currentWindowMaxContextCount;
+						//double pValue = sampleDistribution.getEmpiricalPvalue( (double) windowMethylationPercentage);
+						double pValue = 1 - betaDistribution.cumulativeProbability(windowMethylationPercentage);
+						//System.out.println("count=" + windowMethylationCount + " windowsize=" + currentWindowMaxContextCount + 
+							//	" percentage=" + windowMethylationPercentage*100 + " pValue=" + pValue);
+						if(printDistributions) 
+							sampleDistribution.processDatapoint(windowMethylationPercentage);
+						//if(r == 0 || r == 6 || r == 10 || r == 15) System.out.println(pValue);
+						if(testWindowMethylation(pValue)) {
+							MethylatedRegion mr = new MethylatedRegion(seqName, slidingWindow.getFirst(), 
+									slidingWindow.getLast(), windowMethylationPercentage*100, pValue, null);
+							sampleMrs.add(mr);
+							//System.out.println("mrFirst=" + mr.getFirst() + " CHR=" + mr.getSequenceName());
+							String mrKey = encodeGenomicRegionToString(mr);
+							mrSampleCounts.compute(mrKey, (k,v) -> (v==null) ? 1:v+1);
+						}
 					}
 					currentSWBegin += slidingWindowSize;
 					currentSWLimit += slidingWindowSize;
 				}
 				//System.out.println("nPerChr=" + sampleMrs.size() + " CHR=" + seqName);
-				currentSWBegin = 0;
+				currentSWBegin = 1;
 				currentSWLimit = slidingWindowSize;
 			}
 			//System.out.println("nh="+nHypotheses[r]++);
@@ -396,10 +470,15 @@ public class MethylatedRegionFinder {
 		//}
 	}
 	
+	public String encodeGenomicRegionToString(GenomicRegion region) {
+		return region.getSequenceName() + KEY_SEPARATOR + region.getFirst() + KEY_SEPARATOR + region.getLast();
+	}
+	
+	/**
 	private boolean testCytosineCountCriteria(int windowCytosineCount) {
 		// TODO Auto-generated method stub
 		return windowCytosineCount > slidingWindowSize*0.05;
-	}
+	}**/
 
 	public void applyBonferroniCorrection (List<MethylatedRegion> sampleMrs, int nHypotheses) {
 		//double m = (double) dmrs.size();
@@ -496,7 +575,7 @@ public class MethylatedRegionFinder {
 		List<MethylatedRegion> mrsList = methylatedRegions.asList();
 		printSignificantHeaderFields();
 		for (MethylatedRegion mr : mrsList) {
-			String mrKey = mr.decodeMRToString();
+			String mrKey = encodeGenomicRegionToString(mr);
 			int calls = mrSampleCounts.get(mrKey);
 			mr.setCalls(calls);
 			String mrRecord = mr.toString();
@@ -509,7 +588,7 @@ public class MethylatedRegionFinder {
 		List<MethylatedRegion> mrsList = methylatedRegions.asList();
 		printSimpleHeaderFields();
 		for (MethylatedRegion mr : mrsList) {
-			String mrKey = mr.decodeMRToString();
+			String mrKey = encodeGenomicRegionToString(mr);
 			int calls = mrSampleCounts.get(mrKey);
 			mr.setCalls(calls);
 			String mrRecord = mr.simpleMRToString();
@@ -518,7 +597,7 @@ public class MethylatedRegionFinder {
 		writer.close();
 	}
 
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		String refFile = args[0];
 		String outPrefix = args[1];
@@ -528,14 +607,18 @@ public class MethylatedRegionFinder {
 		List<String> files = new ArrayList<>();
 		if(COMMAND_LINE_OPTION_SIGNIFICANT_ANALYSIS.equals(analysisType)) {
 			double initialAlpha = Double.parseDouble(args[5]);
-			MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, initialAlpha, print, analysisType);
-			for(int f = 6; f < args.length; f++) {
+			String windowContextCountsFile = args[6];
+			String methylationContext = args[7];
+			MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, initialAlpha, print,
+					methylationContext);
+			instance.processContextFile(windowContextCountsFile);
+			for(int f = 8; f < args.length; f++) {
 				files.add(args[f]);
 			}
 			instance.runSignificantAnalysis(files, outPrefix);
 		}
 		else if(COMMAND_LINE_OPTION_SIMPLE_ANALYSIS.equals(analysisType)) {
-			MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, print, analysisType);
+			MethylatedRegionFinder instance = new MethylatedRegionFinder(refFile, swLength, print);
 			for(int f = 5; f < args.length; f++) {
 				files.add(args[f]);
 			}

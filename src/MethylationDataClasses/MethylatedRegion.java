@@ -5,7 +5,6 @@ import java.util.SortedMap;
 import ngsep.genome.GenomicRegion;
 
 public class MethylatedRegion implements GenomicRegion {
-	public static final String KEY_SEPARATOR = ",";
 	
 	private String sampleId;
 	private String sequenceName;
@@ -62,11 +61,7 @@ public class MethylatedRegion implements GenomicRegion {
 		this.methylationCount = methylatedBaseCount;
 		this.pValue = pValue;
 	}
-	
-	public String decodeMRToString() {
-		return this.getSequenceName() + KEY_SEPARATOR + this.getFirst() + KEY_SEPARATOR + this.getLast();
-	}
-	
+
 	public boolean isDifferentiallyMethylated(){
 		return isDmr;
 		
