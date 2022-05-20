@@ -14,6 +14,7 @@ public class MethylatedRegion implements GenomicRegion {
 	private double methylatedControlPercentage;
 	private double methylatedTreatmentPercentage;
 	private double methylationPercentage;
+	private double[] methylationPercentagePerSample;
 	private int methylationCount;
 	private double pValue;
 	private double correctedPvalue;
@@ -60,6 +61,22 @@ public class MethylatedRegion implements GenomicRegion {
 		this.isDmr = false;
 		this.methylationCount = methylatedBaseCount;
 		this.pValue = pValue;
+	}
+
+	public MethylatedRegion(String seqName, int first, int last, int nSamples) {
+		// TODO Auto-generated constructor stub
+		this.sequenceName = seqName;
+		this.first = first;
+		this.last = last;
+		methylationPercentagePerSample = new double[nSamples];
+	}
+	
+	public double[] getMethylationPercentagePerSample() {
+		return methylationPercentagePerSample;
+	}
+
+	public void setMethylationPercentagePerSample(double[] methylationPercentagePerSample) {
+		this.methylationPercentagePerSample = methylationPercentagePerSample;
 	}
 
 	public boolean isDifferentiallyMethylated(){
